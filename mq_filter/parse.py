@@ -1,4 +1,6 @@
+import argparse
 import re
+import string
 
 class ParseError(Exception):
     pass
@@ -22,38 +24,47 @@ class FlightPlanParser:
         # Anticipating need to change this constant for queue migration.
         self.aftn_address = aftn_address
 
-    def detect(self, first_line):
-        if first_line.endswith(self.aftn_address):
-            return self
+    def detect(self, text):
+        lines = printable_splitlines(text)
+        # Ours for line 5 starts with...
+        if len(lines) > 3:
+            if lines[4].startswith('(FPL'):
+                return self
 
     def __call__(self, text):
         data = {}
-        lines = [line.strip() for line in text.splitlines()]
+        lines = printable_splitlines(text)
 
-        if not lines[0].endswith(self.aftn_address):
-            raise ParseError(f'Unexpeced first line {lines[0]}')
+        match = re.match(r'^\(FPL-(?P<airline_code>ATN|ABX)', lines[4])
+        if match:
+            return match.groupdict()
 
-        data['airline_code'] = lines[1][8:][:2]
 
-        if not data['airline_code'] not in two_letter_airline_codes:
-            raise ParseError(f'Invalid airline code in second line lines[1]')
+class APISParser:
 
+    def __init__(self, source_address):
+        self.source_address = source_address
+
+    def detect(self, line2):
+        if re.match(self.source_address, line2):
+            return self
+
+    def __call__(self, text):
+        lines = printable_splitlines(text)
+
+        # last two characters in first part of line two split on whitespace
+        data = {
+            'airline_code': lines[1].split()[0][-2:]
+        }
         return data
 
 
 flight_plan = FlightPlanParser('ATLXRXA')
+apis = APISParser(r'\.ILNDD(GB|8C)')
 
-def apis(text):
-    data = {}
-    lines = [line.strip() for line in text.splitlines()]
-
-    line_two_parts = lines[1].split()
-    data['airline_code'] = line_two_parts[0][-2:]
-
-    if data['airline_code'] not in two_letter_airline_codes:
-        raise ParseError(f'Invalid airline code {data["airline_code"]}')
-
-    return data
+def printable_splitlines(text):
+    lines = [''.join([char for char in line if char in string.printable]) for line in text.splitlines() ]
+    return lines
 
 def dlnk(text):
     # Format 6 (APIS Crew) Line one
@@ -102,7 +113,7 @@ def simple(text):
     return data
 
 def detect(text):
-    lines = [line.strip() for line in text.splitlines()]
+    lines = printable_splitlines(text)
 
     qu_parts = lines[0].split()
     if len(qu_parts) == 2:
@@ -112,11 +123,27 @@ def detect(text):
 
         if lines[2] in ('MVA', 'MVT', 'COR', 'DIV'):
             return simple
-        elif flight_plan.detect(lines[0]):
+        elif flight_plan.detect(text):
             return flight_plan
-        elif lines[0].endswith('SJOIMXA') or lines[0].endswith('DCAUCCR'):
+        elif apis.detect(lines[1]):
             return apis
     elif lines[0].startswith('DLNKYABCD'):
         return dlnk
     else:
         raise ParseError(f'Parser not detected {text}')
+
+def main(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument('messagefile', nargs='+')
+    args = parser.parse_args(argv)
+
+    for fn in args.messagefile:
+        print(fn)
+        with open(fn) as src:
+            content = src.read()
+            parser = detect(content)
+            data = parser(content)
+            print(data)
+
+if __name__ == '__main__':
+    main()
