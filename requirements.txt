@@ -1,1 +1,5 @@
+flask
+flask-sqlalchemy
+psycopg
 pymqi
+sqlalchemy
