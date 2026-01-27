@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+
+{% block content %}
+<a href="{{ url_for('instance.airline', id=1) }}">Airline test</a>
+<h2>Routing Rules</h2>
+<p>Messages from the source queue are read and parsed for their airline code in the content of the message. The following rules determine which queue to put the message to.</p>
+<table>
+    <thead>
+        {{ table.render_thead_row(table.model_class) }}
+    </thead>
+    <tbody>
+        {% for rule in rules %}{{ table.render_tbody_row(rule) }}{% endfor %}
+    </tbody>
+</table>
+{% endblock %}

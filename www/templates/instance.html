@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+
+{% block content %}
+    {% if debug is defined and debug %}
+    <pre>{{ table }}</pre>
+    {% endif %}
+    <dl>{% for key, attr in table.attributes %}
+        {% set value = instance[key] %}
+        <dt>{{ key }}</dt>
+        {% if value is sequence and value is not string %}
+        <dd>
+            <ul>{% for item in value %}
+                <li>{{ render_object(item) }}</li>
+            {% endfor %}</ul>
+        </dd>
+        {% else %}
+        <dd>{{ render_object(value) }}</dd>
+        {% endif %}
+        {% endfor %}
+    </dl>
+{% endblock %}

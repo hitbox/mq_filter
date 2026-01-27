@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+
+{% block content %}
+    {% if description is defined and description %}
+        <p>{{ description }}</p>
+    {% endif %}
+    {% if debug is defined and debug %}
+    <div>{{ table }}</div>
+    {% endif %}
+    {% if objects %}
+    <table>
+        <thead>
+            <tr>{% for title in table.titles %}
+                <th>{{ title }}</th>
+            {% endfor %}</tr>
+        </thead>
+        <tbody>{% for obj in objects %}
+            <tr{% if instance_links %} data-href="{{ url_for(table.model.__tablename__ + '.instance', id=obj.id) }}{% endif %}">{% for key, attr in table.attributes %}
+                {% set value = obj[key] %}
+                <td>{% if value is not none %}{{ render_object(value) }}{% endif %}</td>
+            {% endfor %}</tr>
+        {% endfor %}</tbody>
+    </table>
+    {% else %}
+    <p>Nothing to show</p>
+    {% endif %}
+{% endblock %}

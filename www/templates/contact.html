@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+
+{% block content %}
+<dl>{% for section in config.ABOUT %}
+    <dt>{{ section.title }}</dt>
+    <dd>{% if section.contacts %}
+        <ul>{% for person in section.contacts %}
+            <li>
+                <strong>{{ person.name }}</strong>
+                <a href="{{ person.email }}">{{ person.email }}</a>
+            </li>
+        {% endfor %}
+        </ul>{% endif %}
+    </dd>
+{% endfor %}</dl>
+
+{% endblock %}

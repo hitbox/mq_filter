@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+
+{% block content %}
+    {% if title is defined %}
+        <h3>{{ title }}</h3>
+    {% endif %}
+    {% if list_items %}
+    <nav>
+        <ul>{% for list_item in list_items %}
+            <li><a href="{{ list_item.href }}">{{ list_item.name }}</a></li>{% endfor %}
+    </nav>
+    {% else %}
+    <p>Nothing to list</p>
+    {% endif %}
+{% endblock %}

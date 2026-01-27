@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+
+
+{% block content %}
+<h1>Airline</h1>
+<h3>{{ instance.name }}</h3>
+<dl>
+    <dt>IATA</dt>
+    <dd>{{ instance.iata_code }}</dd>
+    <dt>ICAO</dt>
+    <dd>{{ instance.icao_code }}</dd>
+</dl>
+{% endblock %}

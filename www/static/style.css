@@ -1,0 +1,57 @@
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+}
+
+body {
+    font-family: sans-serif;
+    display: flex;
+    justify-content: center;
+}
+
+table, th, td {
+    border: 1px solid;
+}
+
+table {
+    border-collapse: collapse;
+}
+
+th, td {
+    padding: 8px 12px;
+}
+
+p {
+    max-width: 50vw;
+}
+
+pre {
+    font-size: 1rem;
+}
+
+dt {
+    margin-bottom: 1rem;
+}
+
+dd {
+    margin-bottom: 2rem;
+}
+
+a {
+    text-decoration: none;
+}
+
+a.current {
+    color: darkgreen;
+    text-decoration: underline;
+}
+
+[data-href]:hover {
+    background-color: dodgerblue;
+    cursor: pointer;
+}
