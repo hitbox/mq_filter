@@ -1,3 +1,5 @@
+from contextlib import contextmanager
+
 import sqlalchemy as sa
 
 try:
@@ -88,13 +90,18 @@ class QueueManager(Base):
         back_populates = 'queue_manager',
     )
 
+    @contextmanager
     def connect(self):
         kwargs = {
             'queue_manager': self.manager_name,
             'channel': self.channel.name,
             'conn_info': self.connection,
         }
-        return pymqi.connect(**kwargs)
+        qmgr = pymqi.connect(**kwargs)
+        try:
+            yield qmgr
+        finally:
+            qmgr.disconnect()
 
     @classmethod
     def by_name(cls, name, session):
@@ -111,7 +118,9 @@ class Queue(Base):
 
     id = sa.Column(sa.Integer, primary_key=True)
 
-    name = sa.Column(sa.String)
+    name = sa.Column(sa.String, nullable=False)
+
+    short_name = sa.Column(sa.String, nullable=False)
 
     queue_manager_id = sa.Column(
         sa.Integer,
@@ -148,6 +157,65 @@ class Queue(Base):
         foreign_keys = 'MessageMove.destination_queue_id',
         back_populates = 'destination_queue',
     )
+
+    @classmethod
+    def one_by_short_name(cls, short_name, session):
+        query = sa.select(Queue).where(Queue.short_name == short_name)
+        return session.scalars(query).one()
+
+    def connect(self):
+        kwargs = {
+            'queue_manager': self.queue_manager.name,
+            'channel': self.channel.name,
+            'conn_info': self.connection,
+        }
+        return pymqi.connect(**kwargs)
+
+    def get(self, waitms=None, browse=False, ignore_no_messages=True):
+        try:
+            qmgr = self.connect()
+
+            options = 0
+            if browse:
+                options |= pymqi.CMQC.MQOO_BROWSE
+
+            qconn = pymqi.Queue(qmgr, self.name, options)
+
+            gmo = pymqi.GMO()
+            if waitms is not None:
+                gmo.Options |= pymqi.CMQC.MQGMO_WAIT
+                gmo.WaitInterval = waitms
+
+            if browse:
+                gmo.Options |= pymqi.CMQC.MQGMO_BROWSE_FIRST
+
+            message = None
+            md = None
+            try:
+                md = pymqi.MD()
+                message = qconn.get(None, md, gmo)
+
+            except pymqi.MQMIError as e:
+                if e.reason == pymqi.CMQC.MQRC_NO_MSG_AVAILABLE:
+                    if ignore_no_messages:
+                        pass
+                    else:
+                        raise
+                else:
+                    raise
+
+            finally:
+                qconn.close()
+
+            return message, md
+        finally:
+            qmgr.disconnect()
+
+    def as_row(self):
+        """
+        Short list of identifying names for console printing.
+        """
+        return [self.short_name, self.name]
 
 
 class Airline(Base):
