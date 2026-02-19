@@ -236,8 +236,9 @@ class Queue(Base):
         options = pymqi.PMO()
         if transactional:
             options.Options = pymqi.CMQC.MQPMO_SYNCPOINT
+        md = pymqi.MD()
         dest_q = pymqi.Queue(qmgr, self.name)
-        dest_q.put(message, options)
+        dest_q.put(message, md, options)
         dest_q.close()
 
     def as_row(self):
