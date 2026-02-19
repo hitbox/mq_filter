@@ -90,18 +90,20 @@ class QueueManager(Base):
         back_populates = 'queue_manager',
     )
 
+    def _connect(self):
+        return pymqi.connect(
+            queue_manager = self.manager_name,
+            channel = self.channel.name,
+            conn_info = self.connection.as_string(),
+        )
+
     @contextmanager
     def connect(self):
-        kwargs = {
-            'queue_manager': self.manager_name,
-            'channel': self.channel.name,
-            'conn_info': self.connection,
-        }
-        qmgr = pymqi.connect(**kwargs)
+        _qmgr = self._connect()
         try:
-            yield qmgr
+            yield _qmgr
         finally:
-            qmgr.disconnect()
+            _qmgr.disconnect()
 
     @classmethod
     def by_name(cls, name, session):
@@ -163,53 +165,72 @@ class Queue(Base):
         query = sa.select(Queue).where(Queue.short_name == short_name)
         return session.scalars(query).one()
 
-    def connect(self):
-        kwargs = {
-            'queue_manager': self.queue_manager.name,
-            'channel': self.channel.name,
-            'conn_info': self.connection,
-        }
-        return pymqi.connect(**kwargs)
+    @classmethod
+    def all_like_name(cls, short_name_pattern, session):
+        query = sa.select(cls).where(cls.short_name.ilike(short_name_pattern)).order_by(cls.short_name)
+        return session.scalars(query)
 
-    def get(self, waitms=None, browse=False, ignore_no_messages=True):
-        try:
-            qmgr = self.connect()
-
+    @contextmanager
+    def open(self, qmgr, options=None):
+        if options is None:
             options = 0
-            if browse:
-                options |= pymqi.CMQC.MQOO_BROWSE
 
-            qconn = pymqi.Queue(qmgr, self.name, options)
+        q = pymqi.Queue(qmgr, self.name, options)
+        try:
+            yield q
+        finally:
+            q.close()
 
-            gmo = pymqi.GMO()
-            if waitms is not None:
-                gmo.Options |= pymqi.CMQC.MQGMO_WAIT
-                gmo.WaitInterval = waitms
+    def browse_messages(self, qmgr, wait_interval=10_000):
+        """
+        Generate (mesage, md) tuples from queue without removing them. Use
+        .get_mesage(md.MsgId) to remove message.
+        """
+        # XXX
+        # - Absolutely cannot have a generator here. It is completely broken.
+        qopts =  pymqi.CMQC.MQOO_INPUT_AS_Q_DEF | pymqi.CMQC.MQOO_BROWSE
+        gmo = pymqi.GMO()
 
-            if browse:
-                gmo.Options |= pymqi.CMQC.MQGMO_BROWSE_FIRST
+        messages = []
 
-            message = None
-            md = None
-            try:
-                md = pymqi.MD()
-                message = qconn.get(None, md, gmo)
-
-            except pymqi.MQMIError as e:
-                if e.reason == pymqi.CMQC.MQRC_NO_MSG_AVAILABLE:
-                    if ignore_no_messages:
-                        pass
-                    else:
-                        raise
-                else:
+        with self.open(qmgr, qopts) as q:
+            # BROWSE_FIRST on first iteration
+            gmo.Options = pymqi.CMQC.MQGMO_BROWSE_FIRST | pymqi.CMQC.MQGMO_WAIT
+            gmo.WaitInterval = wait_interval
+            while True:
+                try:
+                    md = pymqi.MD()
+                    message = q.get(None, md, gmo)
+                    messages.append((message, md))
+                except pymqi.MQMIError as e:
+                    if e.reason == pymqi.CMQC.MQRC_NO_MSG_AVAILABLE:
+                        # Break on no message or browsing ended.
+                        break
                     raise
 
-            finally:
-                qconn.close()
+                # Switch to Browse next
+                gmo.Options = pymqi.CMQC.MQGMO_BROWSE_NEXT | pymqi.CMQC.MQGMO_WAIT
 
-            return message, md
+        return messages
+
+    def get_message(self, qmgr, message_id):
+        q = pymqi.Queue(qmgr, self.name, pymqi.CMQC.MQOO_INPUT_AS_Q_DEF)
+        try:
+            md = pymqi.MD()
+            md.MsgId = message_id
+
+            gmo = pymqi.GMO()
+            gmo.Options = pymqi.CMQC.MQMO_MATCH_MSG_ID
+
+            message = q.get(None, md, gmo)
+            qmgr.commit()
+            return message
         finally:
-            qmgr.disconnect()
+            q.close()
+
+    def put(self, qmgr, message):
+        qconn = pymqi.Queue(qmgr, self.name)
+        qconn.put(message)
 
     def as_row(self):
         """
@@ -263,6 +284,20 @@ class Airline(Base):
         back_populates = 'airline',
     )
 
+    @classmethod
+    def one_for_length(cls, airline_code, session):
+        if len(airline_code) == 2:
+            column = Airline.iata_code
+        elif len(airline_code) == 3:
+            column = Airline.icao_code
+        query = (
+            sa.select(Airline)
+            .where(
+                column == airline_code
+            )
+        )
+        return session.scalars(query).one()
+
 
 class AirlineRoutingRule(Base):
     """
@@ -291,6 +326,7 @@ class AirlineRoutingRule(Base):
     source_queue_id = sa.Column(
         sa.Integer,
         sa.ForeignKey('queue.id'),
+        nullable = False,
     )
 
     source_queue = relationship(
@@ -306,6 +342,7 @@ class AirlineRoutingRule(Base):
     destination_queue_id = sa.Column(
         sa.Integer,
         sa.ForeignKey('queue.id'),
+        nullable = False,
     )
 
     destination_queue = relationship(
@@ -323,12 +360,14 @@ class AirlineRoutingRule(Base):
         return f'{self.airline.name} to {self.destination_queue.name}'
 
     @classmethod
-    def from_(cls, queue_manager, airline, session):
-        query = sa.select(cls).where(
-            cls.queue_manager_id == queue_manager.id,
-            cls.airline_id == airline.id,
+    def one_for_airline(cls, airline, source_queue, session):
+        query = sa.select(
+            AirlineRoutingRule
+        ).where(
+            AirlineRoutingRule.airline == airline,
+            AirlineRoutingRule.source_queue == source_queue,
         )
-        return session.scalars(query).one_or_none()
+        return session.scalars(query).one()
 
 
 class Message(Base):
@@ -399,4 +438,3 @@ class MessageMove(Base):
         back_populates = 'destination_messages',
         foreign_keys = [destination_queue_id],
     )
-
