@@ -63,6 +63,10 @@ flight_plan = FlightPlanParser('ATLXRXA')
 apis = APISParser(r'\.ILNDD(GB|8C)')
 
 def printable_splitlines(text):
+    """
+    Keeping only prinatable characters, split into a list of lines.
+    """
+    # Keep whitespace for later splitting of lines.
     lines = [''.join([char for char in line if char in string.printable]) for line in text.splitlines() ]
     return lines
 
@@ -83,12 +87,12 @@ def dlnk(text):
 def simple(text):
     # Parse simple messages with the format type code on one or two lines.
     data = {}
-    lines = [line.strip() for line in text.splitlines()]
+    lines = printable_splitlines(text)
 
     qu_text, qu_data = lines[0].split()
 
     if qu_text != 'QU':
-        raise ParseError('First Line does not start with "QU"')
+        raise ParseError(f'First Line does not start with "QU" {qu_text=}')
 
     data['qu'] = qu_data
 
@@ -117,20 +121,38 @@ def detect(text):
 
     qu_parts = lines[0].split()
     if len(qu_parts) == 2:
-        qu_text, qu_data = qu_parts
+        qu_text, qu_remaining = qu_parts
+        qu_text = ''.join(char for char in qu_text if char in string.printable and char not in string.whitespace)
         if qu_text != 'QU':
-            raise ParseError('First Line does not start with "QU"')
-
+            raise ParseError(f'First Line does not start with "QU", {lines}')
         if lines[2] in ('MVA', 'MVT', 'COR', 'DIV'):
             return simple
         elif flight_plan.detect(text):
             return flight_plan
         elif apis.detect(lines[1]):
             return apis
-    elif lines[0].startswith('DLNKYABCD'):
+    elif lines[0].startswith('DLNK'):
         return dlnk
     else:
-        raise ParseError(f'Parser not detected {text}')
+        raise ParseError(f'Parser not detected {text!r}')
+
+def extract_payload_from_mq(message):
+    """
+    Extract the application payload from an IBM MQ message.
+
+    Parses RFH2 folders as XML and returns only the application payload.
+    """
+    # If no RFH2, decode directly
+    if not message.startswith(b"RFH "):
+        return message.decode("utf-8", errors="strict")
+
+    # RFH2 header length (bytes 8–11, big endian)
+    header_len = int.from_bytes(message[8:12], "big")
+    rfh2_section = message[:header_len]
+    payload = message[header_len:]
+
+    # Remaining bytes = payload
+    return payload.decode()
 
 def main(argv=None):
     parser = argparse.ArgumentParser()
