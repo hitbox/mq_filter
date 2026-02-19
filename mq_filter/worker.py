@@ -158,6 +158,7 @@ class Worker:
                                 '%s: An exception occurred while moving message.',
                                 self.source_queue_short_name)
                             session.rollback()
+                            qmgr.backout()
 
     def loop_forever(self, database_uri, mailer):
         logger = self.get_logger()

@@ -226,7 +226,8 @@ class Queue(Base):
                 gmo.Options |= pymqi.CMQC.MQGMO_SYNCPOINT
 
             message = get_q.get(None, md, gmo)
-            qmgr.commit()
+            if not transactional:
+                qmgr.commit()
             return message
         finally:
             get_q.close()
@@ -236,7 +237,7 @@ class Queue(Base):
         if transactional:
             options.Options = pymqi.CMQC.MQPMO_SYNCPOINT
         dest_q = pymqi.Queue(qmgr, self.name)
-        dest_q.put(message)
+        dest_q.put(message, options)
         dest_q.close()
 
     def as_row(self):
