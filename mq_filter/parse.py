@@ -112,7 +112,7 @@ def simple(text):
     elif airline_line[:2] in two_letter_airline_codes:
         data['airline_code'] = airline_line[:2]
     else:
-        raise ParseError(f'Airline code not found: {lines[airline_line]}')
+        raise ParseError(f'Airline code not found: {text}')
 
     return data
 

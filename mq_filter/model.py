@@ -213,24 +213,31 @@ class Queue(Base):
 
         return messages
 
-    def get_message(self, qmgr, message_id):
-        q = pymqi.Queue(qmgr, self.name, pymqi.CMQC.MQOO_INPUT_AS_Q_DEF)
+    def get_message(self, qmgr, message_id, transactional=False):
+        get_q = pymqi.Queue(qmgr, self.name, pymqi.CMQC.MQOO_INPUT_AS_Q_DEF)
         try:
             md = pymqi.MD()
+            md.MatchOptions = pymqi.CMQC.MQMO_MATCH_MSG_ID
             md.MsgId = message_id
 
             gmo = pymqi.GMO()
-            gmo.Options = pymqi.CMQC.MQMO_MATCH_MSG_ID
+            gmo.Options = pymqi.CMQC.MQGMO_WAIT
+            if transactional:
+                gmo.Options |= pymqi.CMQC.MQGMO_SYNCPOINT
 
-            message = q.get(None, md, gmo)
+            message = get_q.get(None, md, gmo)
             qmgr.commit()
             return message
         finally:
-            q.close()
+            get_q.close()
 
-    def put(self, qmgr, message):
-        qconn = pymqi.Queue(qmgr, self.name)
-        qconn.put(message)
+    def put(self, qmgr, message, transactional=False):
+        options = pymqi.PMO()
+        if transactional:
+            options.Options = pymqi.CMQC.MQPMO_SYNCPOINT
+        dest_q = pymqi.Queue(qmgr, self.name)
+        dest_q.put(message)
+        dest_q.close()
 
     def as_row(self):
         """
