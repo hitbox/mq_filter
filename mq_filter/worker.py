@@ -20,6 +20,7 @@ from .model import Message
 from .model import MessageMove
 from .model import Queue
 from .parse import detect as detect_parser
+from .parse import ParseError
 from .parse import extract_payload_from_mq
 
 class SimpleMailer:
@@ -117,6 +118,9 @@ class Worker:
                         try:
                             # Parse content for airline code and resolve database object.
                             data = parser(content)
+
+                            if data is None:
+                                raise ParseError(f'No data from parser: {parser}')
 
                             # Get airline db object from two or three letter code
                             # scraped from content.

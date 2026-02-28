@@ -23,19 +23,21 @@ class FlightPlanParser:
     def __init__(self, aftn_address):
         # Anticipating need to change this constant for queue migration.
         self.aftn_address = aftn_address
+        self.detected_line = None
 
     def detect(self, text):
         lines = printable_splitlines(text)
-        # Ours for line 5 starts with...
-        if len(lines) > 3:
-            if lines[4].startswith('(FPL'):
+
+        for index, line in enumerate(lines):
+            if line.startswith('(FPL-'):
+                self.detected_line = index
                 return self
 
     def __call__(self, text):
         data = {}
         lines = printable_splitlines(text)
 
-        match = re.match(r'^\(FPL-(?P<airline_code>ATN|ABX)', lines[4])
+        match = re.match(r'^\(FPL-(?P<airline_code>ATN|ABX)', lines[self.detected_line])
         if match:
             return match.groupdict()
 
@@ -58,6 +60,11 @@ class APISParser:
         }
         return data
 
+# TODO
+# FlightPlans
+# Look for FF line. FF line can "break" across lines with an actual newline.
+# Find datetime and KILNABXD line
+# Next line should be (FPL
 
 flight_plan = FlightPlanParser('ATLXRXA')
 apis = APISParser(r'\.ILNDD(GB|8C)')
@@ -107,6 +114,7 @@ def simple(text):
     else:
         airline_line = lines[3]
 
+    airline_code = airline_line[:3]
     if airline_line[:3] in three_letter_airline_codes:
         data['airline_code'] = airline_line[:3]
     elif airline_line[:2] in two_letter_airline_codes:
