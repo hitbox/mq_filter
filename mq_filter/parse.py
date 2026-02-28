@@ -1,4 +1,3 @@
-import argparse
 import re
 import string
 
@@ -6,143 +5,109 @@ class ParseError(Exception):
     pass
 
 
-airline_code_pattern = r'(?<airline_code>8C|GB|ABX|ATN)'
+airline_codes_regex = re.compile(r'^(?P<airline_code>ATN|ABX|8C|GB)')
+airline_codes_3letter_regex = re.compile(r'^(?P<airline_code>ATN|ABX)')
 
-two_letter_airline_codes = [
-    '8C',
-    'GB',
+message_types = [
+    'MVA',
+    'MVT',
+    'DIV',
 ]
 
-three_letter_airline_codes = [
-    'ABX',
-    'ATN',
-]
+regex_for_format = {
+    'MVT': airline_codes_regex,
+    'MVA': airline_codes_regex,
+    'DIV': airline_codes_3letter_regex,
+}
 
-class FlightPlanParser:
+apis_regex = re.compile(r'\.ILNDD(?P<airline_code>GB|8C)')
 
-    def __init__(self, aftn_address):
-        # Anticipating need to change this constant for queue migration.
-        self.aftn_address = aftn_address
-        self.detected_line = None
+flight_plan_regex = re.compile(r'^\(FPL-(?P<airline_code>ATN|ABX)')
 
-    def detect(self, text):
-        lines = printable_splitlines(text)
+two_letter_airline_codes = {'8C', 'GB'}
 
-        for index, line in enumerate(lines):
-            if line.startswith('(FPL-'):
-                self.detected_line = index
-                return self
+three_letter_airline_codes = {'ABX', 'ATN'}
 
-    def __call__(self, text):
-        data = {}
-        lines = printable_splitlines(text)
+def parse_content_for_airline(content):
+    # Filter for only printable characters and split lines without keeping the
+    # newline characters.
+    lines = printable_splitlines(content)
 
-        match = re.match(r'^\(FPL-(?P<airline_code>ATN|ABX)', lines[self.detected_line])
+    data = {}
+    if lines[0].startswith('DLNK'):
+        # DLNK indicated on first line. There should be whitespace between this
+        # starting text and the two- or three-letter airline code.
+        line_one_parts = lines[0].split()
+        first_part_line_one = line_one_parts[1]
+        if first_part_line_one not in two_letter_airline_codes:
+            raise ParseError(
+                f'DLNK detected but {first_part_line_one=} not in {two_letter_airline_codes=}'
+            )
+        data.update({
+            'airline_code': first_part_line_one,
+            'type': 'DLNK',
+            'format': 'DLNK',
+        })
+
+    if not lines[0].startswith('QU'):
+        raise ParseError('Non-DLNK message must start with QU')
+
+    msg_format = lines[2]
+    data.update({
+        'format': msg_format,
+    })
+    if msg_format == 'COR' and lines[3] in message_types:
+        # COR message format which includes the type on the next line. After
+        # that the the lines are parsed similarly to Non-COR messages.
+        # Update type from next line
+        if lines[3] not in message_types:
+            raise ParseError(
+                f'COR message must have one of {message_types=} in line after'
+                f' COR-line: {lines[3]=}')
+
+        data['type'] = lines[3]
+        # COR message is 2-letter airline code.
+        if lines[4] not in two_letter_airline_codes:
+            raise ParseError(
+                f'COR message must have two-letter airline code'
+                f' {lines[2:5]=}')
+        data['airline_code'] = lines[4]
+    elif msg_format in message_types:
+        regex = regex_for_format[msg_format]
+        # Non-COR message format. Using looked-up regex for format to enforce
+        # expected airline code length.
+        match = regex.match(lines[3])
         if match:
-            return match.groupdict()
-
-
-class APISParser:
-
-    def __init__(self, source_address):
-        self.source_address = source_address
-
-    def detect(self, line2):
-        if re.match(self.source_address, line2):
-            return self
-
-    def __call__(self, text):
-        lines = printable_splitlines(text)
-
-        # last two characters in first part of line two split on whitespace
-        data = {
-            'airline_code': lines[1].split()[0][-2:]
-        }
-        return data
-
-# TODO
-# FlightPlans
-# Look for FF line. FF line can "break" across lines with an actual newline.
-# Find datetime and KILNABXD line
-# Next line should be (FPL
-
-flight_plan = FlightPlanParser('ATLXRXA')
-apis = APISParser(r'\.ILNDD(GB|8C)')
+            data.update(match.groupdict())
+        else:
+            raise ParseError(
+                'Unable to find airline code for Non-COR format:'
+                f'{lines[2:4]=} {regex=}')
+    else:
+        # Try APIS before flight plan, on second line
+        match = apis_regex.match(lines[1])
+        if match:
+            data.update(match.groupdict())
+        else:
+            # Finally, search for flight plan type line-by-line because the ^FF
+            # line can wrap with newlines.
+            for line in lines:
+                match = flight_plan_regex.match(line)
+                if match:
+                    data.update(match.groupdict())
+                    break
+            else:
+                raise ParseError(
+                    f'Unable to find flight plan with {flight_plan_regex=}')
+    return data
 
 def printable_splitlines(text):
     """
-    Keeping only prinatable characters, split into a list of lines.
+    Keeping only printable characters, split into a list of lines.
     """
     # Keep whitespace for later splitting of lines.
     lines = [''.join([char for char in line if char in string.printable]) for line in text.splitlines() ]
     return lines
-
-def dlnk(text):
-    # Format 6 (APIS Crew) Line one
-    # DLNKN1427A   GB  3110 19DEC2025MIA  CVG  GB     TEXT   111TEXT UPLINK                          PART 1 OF 1
-    data = {}
-    lines = [line.strip() for line in text.splitlines()]
-
-    line_one_parts = lines[0].split()
-
-    if not line_one_parts[0].startswith('DLNK'):
-        raise ParseError('Line one does not start with DLNK: {lines[0]}')
-
-    data['airline_code'] = line_one_parts[1]
-    return data
-
-def simple(text):
-    # Parse simple messages with the format type code on one or two lines.
-    data = {}
-    lines = printable_splitlines(text)
-
-    qu_text, qu_data = lines[0].split()
-
-    if qu_text != 'QU':
-        raise ParseError(f'First Line does not start with "QU" {qu_text=}')
-
-    data['qu'] = qu_data
-
-    # Third line is message format type
-    data['format_type'] = lines[2]
-
-    airline_line = 3
-    if data['format_type'] == 'COR':
-        # Add second format type and adjust which line has the airline
-        data['format_type'] += ' ' + lines[3]
-        airline_line = lines[4]
-    else:
-        airline_line = lines[3]
-
-    airline_code = airline_line[:3]
-    if airline_line[:3] in three_letter_airline_codes:
-        data['airline_code'] = airline_line[:3]
-    elif airline_line[:2] in two_letter_airline_codes:
-        data['airline_code'] = airline_line[:2]
-    else:
-        raise ParseError(f'Airline code not found: {text}')
-
-    return data
-
-def detect(text):
-    lines = printable_splitlines(text)
-
-    qu_parts = lines[0].split()
-    if len(qu_parts) == 2:
-        qu_text, qu_remaining = qu_parts
-        qu_text = ''.join(char for char in qu_text if char in string.printable and char not in string.whitespace)
-        if qu_text != 'QU':
-            raise ParseError(f'First Line does not start with "QU", {lines}')
-        if lines[2] in ('MVA', 'MVT', 'COR', 'DIV'):
-            return simple
-        elif flight_plan.detect(text):
-            return flight_plan
-        elif apis.detect(lines[1]):
-            return apis
-    elif lines[0].startswith('DLNK'):
-        return dlnk
-    else:
-        raise ParseError(f'Parser not detected {text!r}')
 
 def extract_payload_from_mq(message):
     """
@@ -152,28 +117,11 @@ def extract_payload_from_mq(message):
     """
     # If no RFH2, decode directly
     if not message.startswith(b"RFH "):
-        return message.decode("utf-8", errors="strict")
+        return message.decode("utf-8")
 
     # RFH2 header length (bytes 8–11, big endian)
-    header_len = int.from_bytes(message[8:12], "big")
-    rfh2_section = message[:header_len]
+    header_len = int.from_bytes(message[8:12])
     payload = message[header_len:]
 
-    # Remaining bytes = payload
+    # Remaining bytes (decoded) == payload
     return payload.decode()
-
-def main(argv=None):
-    parser = argparse.ArgumentParser()
-    parser.add_argument('messagefile', nargs='+')
-    args = parser.parse_args(argv)
-
-    for fn in args.messagefile:
-        print(fn)
-        with open(fn) as src:
-            content = src.read()
-            parser = detect(content)
-            data = parser(content)
-            print(data)
-
-if __name__ == '__main__':
-    main()
