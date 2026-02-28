@@ -106,8 +106,7 @@ class Worker:
                     content = extract_payload_from_mq(message).strip()
                 except UnicodeDecodeError:
                     logger.exception(
-                        '%s: An exception occurred while decoding %r.',
-                        self.source_queue_short_name,
+                        'An exception occurred while decoding %r.',
                         message,
                     )
                 else:
