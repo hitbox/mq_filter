@@ -34,7 +34,7 @@ class Worker:
         logger = logging.getLogger(f'mq_filter.worker.{self.source_queue_short_name}')
         return logger
 
-    def move_messages(self, session, mailer):
+    def move_messages(self, session):
         logger = self.get_logger()
 
         source_queue = Queue.one_by_short_name(self.source_queue_short_name, session)
@@ -73,7 +73,7 @@ class Worker:
                         rule.destination_queue.put(qmgr, db_message.message_bytes, transactional=True)
                         message_move.destination_queue = rule.destination_queue
                         logger.info(
-                            'rule from data=%s airline airline=%s to destination_queue=%s',
+                            'rule from data=%r airline=%s to destination_queue=%s',
                             data,
                             airline.name,
                             rule.destination_queue.short_name,
@@ -101,7 +101,7 @@ class Worker:
                         session.rollback()
                         qmgr.backout()
 
-    def loop_forever(self, database_uri, mailer):
+    def loop_forever(self, database_uri):
         logger = self.get_logger()
         logger.info("Starting worker for queue %s", self.source_queue_short_name)
 
@@ -110,7 +110,7 @@ class Worker:
         while True:
             with Session(engine) as session:
                 try:
-                    self.move_messages(session, mailer)
+                    self.move_messages(session)
                 except pymqi.MQMIError as e:
                     if e.reason == pymqi.CMQC.MQRC_CONNECTION_BROKEN:
                         logger.warning('MQ connection broken, reconnecting...')

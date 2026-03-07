@@ -17,23 +17,32 @@ message_types = [
 regex_for_format = {
     'MVT': airline_codes_regex,
     'MVA': airline_codes_regex,
-    'DIV': airline_codes_3letter_regex,
+    'DIV': airline_codes_regex,
 }
 
 apis_regex = re.compile(r'\.ILNDD(?P<airline_code>GB|8C)')
 
-flight_plan_regex = re.compile(r'^\(FPL-(?P<airline_code>ATN|ABX)')
+### Second Switchover Attempt ###
+# 2026-03-04 Monday
+# Originally this was expected to be (FPL- and then the airline code.
+# Testing switch-over this morning showed other values CNL, DLA, CHG.
+# The FF in that line, is a priority (mentioned by someone on the call).
+flight_plan_regex = re.compile(r'^\((CHG|CNL|DLA|FPL)-(?P<airline_code>ATN|ABX)')
 
 two_letter_airline_codes = {'8C', 'GB'}
 
 three_letter_airline_codes = {'ABX', 'ATN'}
+
+airline_codes = two_letter_airline_codes.union(three_letter_airline_codes)
 
 def parse_content_for_airline(content):
     # Filter for only printable characters and split lines without keeping the
     # newline characters.
     lines = printable_splitlines(content)
 
-    data = {}
+    data = {
+        'content': content,
+    }
     if lines[0].startswith('DLNK'):
         # DLNK indicated on first line. There should be whitespace between this
         # starting text and the two- or three-letter airline code.
@@ -48,9 +57,10 @@ def parse_content_for_airline(content):
             'type': 'DLNK',
             'format': 'DLNK',
         })
+        return data
 
     if not lines[0].startswith('QU'):
-        raise ParseError('Non-DLNK message must start with QU')
+        raise ParseError(f'Non-DLNK message must start with "QU" {lines[0]=}')
 
     msg_format = lines[2]
     data.update({
@@ -67,7 +77,7 @@ def parse_content_for_airline(content):
 
         data['type'] = lines[3]
         # COR message is 2-letter airline code.
-        if lines[4] not in two_letter_airline_codes:
+        if lines[4] not in airline_codes:
             raise ParseError(
                 f'COR message must have two-letter airline code'
                 f' {lines[2:5]=}')
@@ -75,14 +85,14 @@ def parse_content_for_airline(content):
     elif msg_format in message_types:
         regex = regex_for_format[msg_format]
         # Non-COR message format. Using looked-up regex for format to enforce
-        # expected airline code length.
+        # expected airline codes.
         match = regex.match(lines[3])
         if match:
             data.update(match.groupdict())
         else:
             raise ParseError(
                 'Unable to find airline code for Non-COR format:'
-                f'{lines[2:4]=} {regex=}')
+                f'{lines[3]=} {regex=}')
     else:
         # Try APIS before flight plan, on second line
         match = apis_regex.match(lines[1])
@@ -98,7 +108,7 @@ def parse_content_for_airline(content):
                     break
             else:
                 raise ParseError(
-                    f'Unable to find flight plan with {flight_plan_regex=}')
+                    f'Unable to find flight plan with {flight_plan_regex=} for {content=}')
     return data
 
 def printable_splitlines(text):
