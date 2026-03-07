@@ -79,13 +79,6 @@ class Worker:
                             rule.destination_queue.short_name,
                         )
 
-                        message_move.destination_queue = rule.destination_queue
-                        logger.info(
-                            'message moved from %s to %s',
-                            source_queue.name,
-                            message_move.destination_queue.name,
-                        )
-
                         # Remove message from queue
                         source_queue.get_message(qmgr, md.MsgId, transactional=True)
 
