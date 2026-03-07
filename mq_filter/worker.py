@@ -48,7 +48,6 @@ class Worker:
                 message_move = MessageMove(message=db_message, source_queue=source_queue)
                 session.add(db_message)
                 session.add(message_move)
-                session.commit()
                 # Try to decode and parse message to get airline, routing it to
                 # another queue.
                 try:
