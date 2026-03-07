@@ -364,6 +364,13 @@ class AirlineRoutingRule(Base):
         },
     )
 
+    __table_args__ = (
+        sa.UniqueConstraint(
+            airline_id, source_queue_id, destination_queue_id,
+            name = 'unique_airline_routing_rule',
+        ),
+    )
+
     @property
     def display_name(self):
         return f'{self.airline.name} to {self.destination_queue.name}'
