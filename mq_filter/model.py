@@ -10,6 +10,9 @@ except ImportError:
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import relationship
 
+from .parse import parse_content_for_airline
+from .parse import extract_payload_from_mq
+
 class Base(DeclarativeBase):
 
     @classmethod
@@ -35,7 +38,7 @@ class Connection(Base):
 
     queue_managers = relationship(
         'QueueManager',
-        back_populates='connection',
+        back_populates = 'connection',
     )
 
     def as_string(self):
@@ -404,7 +407,7 @@ class Message(Base):
     @property
     def message_string(self):
         if self.message_bytes:
-            return self.message_bytes.decode()
+            return extract_payload_from_mq(self.message_bytes)
         return None
 
 
@@ -454,3 +457,8 @@ class MessageMove(Base):
         back_populates = 'destination_messages',
         foreign_keys = [destination_queue_id],
     )
+
+    @property
+    def data_for_airline(self):
+        if self.message.message_string:
+            return parse_content_for_airline(self.message.message_string.strip())
