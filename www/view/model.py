@@ -1,3 +1,6 @@
+"""
+Views for all database model objects.
+"""
 from flask import Blueprint
 from flask import render_template
 from flask import url_for
@@ -5,7 +8,10 @@ from flask.views import View
 from markupsafe import Markup
 from sqlalchemy import inspect
 
+from www import tables
 from www.extension import db
+from www.html import Column
+from www.html import Table
 
 from mq_filter import model as model_module
 from mq_filter.model import Airline
@@ -19,13 +25,13 @@ from mq_filter.model import MessageMove
 
 class ListView(View):
 
-    def __init__(self, querygetter, template, more_context=None):
-        self.querygetter = querygetter
+    def __init__(self, objects_getter, template, more_context=None):
+        self.objects_getter = objects_getter
         self.template = template
         self.more_context = more_context
 
     def dispatch_request(self):
-        objects = db.session.scalars(self.querygetter()).all()
+        objects = self.objects_getter()
         context = {
             'objects': objects,
         }
@@ -78,6 +84,10 @@ def name_or_title(column, key):
     info = getattr(column, 'info', {})
     return info.get('title', getattr(column, 'name', key))
 
+def get_renderer(obj):
+    if hasattr(obj, 'info'):
+        return obj.info.get('renderer')
+
 def table_model(model, skip_pk=True, skip_fk=True):
     """
     Create data structure for templates to render a table from a model and its
@@ -85,7 +95,9 @@ def table_model(model, skip_pk=True, skip_fk=True):
     """
     inspector = inspect(model)
 
-    attributes = []
+    relationship_keys = {rel.key: rel for rel in inspector.relationships}
+
+    columns = []
     for key, attr in inspector.all_orm_descriptors.items():
         if key.startswith('_'):
             continue
@@ -96,13 +108,26 @@ def table_model(model, skip_pk=True, skip_fk=True):
         if skip_fk and hasattr(attr, 'foreign_keys') and attr.foreign_keys:
             continue
 
-        attributes.append((key, attr))
+        if attr in attribute_renderers:
+            # Renderer from this module.
+            renderer = attribute_renderers[attr]
+        else:
+            # Lookup from info dict
+            renderer = get_renderer(attr)
+            if not renderer:
+                if key in relationship_keys:
+                    rel = relationship_keys[key]
+                    def renderer(value):
+                        return str(rel)
 
-    table = {
-        'model': model,
-        'attributes': attributes,
-        'titles': [name_or_title(attr, key) for key, attr in attributes],
-    }
+        column = Column(attr_name=key, renderer=renderer)
+
+        columns.append(column)
+
+    table = Table(
+        columns = columns,
+        model = model,
+    )
     return table
 
 def create_model_blueprint(model, prefix=None):
@@ -112,17 +137,28 @@ def create_model_blueprint(model, prefix=None):
         prefix = ''
 
     debug = False
+
+    if model in tables.for_model:
+        table = tables.for_model[model]
+    else:
+        table = table_model(model)
+
+    if model in objects_getters:
+        objects_getter = objects_getters[model]
+    else:
+        objects_getter = lambda: db.paginate(db.select(model))
+
     model_bp.add_url_rule(
         f'{prefix}/{model.__tablename__}',
         view_func = ListView.as_view(
             name = 'list',
-            querygetter = lambda: db.select(model),
+            objects_getter = objects_getter, 
             template = 'table.html',
             more_context = {
                 'title': model.__tablename__,
                 'description': model.__doc__,
-                'table': table_model(model),
-                'instance_links': True,
+                'table': table,
+                'instance_links': False,
                 'render_object': render_object,
                 'debug': debug,
             },
@@ -178,6 +214,15 @@ def init_app(app):
 
     for blueprint in model_views.values():
         app.register_blueprint(blueprint)
+
+attribute_renderers = {
+    Airline.destination_queues: lambda obj: f'{len(obj.destination_queues)} destination queues'
+}
+
+# functions to get the instances of models
+objects_getters = {
+    MessageMove: lambda: db.paginate(db.select(MessageMove).join(Message).where(Message.message_bytes.is_not(None), MessageMove.destination_queue_id.is_not(None)).order_by(MessageMove.moved_at)),
+}
 
 prefix = '/obj'
 model_views = {

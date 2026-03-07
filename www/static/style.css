@@ -26,6 +26,10 @@ th, td {
     padding: 8px 12px;
 }
 
+td {
+    vertical-align: top;
+}
+
 p {
     max-width: 50vw;
 }
@@ -34,12 +38,18 @@ pre {
     font-size: 1rem;
 }
 
-dt {
-    margin-bottom: 1rem;
+/*
+pre.message_string {
+    line-height: 1rem;
+    max-height: calc(1rem * 10);
+    overflow: scroll;
 }
+*/
 
-dd {
-    margin-bottom: 2rem;
+dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    margin: 0;
 }
 
 a {
@@ -54,4 +64,9 @@ a.current {
 [data-href]:hover {
     background-color: dodgerblue;
     cursor: pointer;
+}
+
+.pagination * {
+    display: inline-block;
+    min-width: 4ch;
 }

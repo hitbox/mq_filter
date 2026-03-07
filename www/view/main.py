@@ -2,6 +2,7 @@ from flask import Blueprint
 from flask import render_template
 
 from www.extension import db
+from www.html import Column
 from www.html import Table
 
 from mq_filter.model import Queue
@@ -11,10 +12,10 @@ from mq_filter.model import AirlineRoutingRule
 main_bp = Blueprint('main', __name__)
 
 rules_table = Table(
-    attributes = [
-        'airline.iata_code',
-        'source_queue.name',
-        'destination_queue.name',
+    columns = [
+        Column('airline.iata_code'),
+        Column('source_queue.name'),
+        Column('destination_queue.name'),
     ],
 )
 

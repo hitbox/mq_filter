@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 
 
+{% from "render.html" import render_pagination %}
+
+
 {% block content %}
     {% if description is defined and description %}
         <p>{{ description }}</p>
@@ -9,19 +12,25 @@
     <div>{{ table }}</div>
     {% endif %}
     {% if objects %}
+    {{ render_pagination(objects, request.endpoint) }}
     <table>
         <thead>
-            <tr>{% for title in table.titles %}
-                <th>{{ title }}</th>
+            <tr>{% for column in table.columns %}
+                <th>{{ column.header }}</th>
             {% endfor %}</tr>
         </thead>
         <tbody>{% for obj in objects %}
-            <tr{% if instance_links %} data-href="{{ url_for(table.model.__tablename__ + '.instance', id=obj.id) }}{% endif %}">{% for key, attr in table.attributes %}
-                {% set value = obj[key] %}
-                <td>{% if value is not none %}{{ render_object(value) }}{% endif %}</td>
+            {% if instance_links %}
+                {% set data_href = url_for(table.model.__tablename__ + '.instance', id=obj.id) %}
+            {% else %}
+                {% set data_href = none %}
+            {% endif %}
+            <tr{% if data_href %} data-href="{{ data_href }}{% endif %}">{% for column in table.columns %}
+                <td>{% if value is not none %}{{ column.renderer(obj) }}{% endif %}</td>
             {% endfor %}</tr>
         {% endfor %}</tbody>
     </table>
+    {{ render_pagination(objects, request.endpoint) }}
     {% else %}
     <p>Nothing to show</p>
     {% endif %}

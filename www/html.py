@@ -5,16 +5,19 @@ default_th_renderer = lambda title: f'<th>{ title }</th>'
 
 default_td_renderer = lambda obj, value: f'<td>{ value }</td>'
 
+class Column:
+
+    def __init__(self, attr_name, header=None, renderer=None):
+        self.attr_name = attr_name
+        self.header = header or attr_name.replace('_', ' ').title()
+        self.renderer = renderer or (lambda obj: getattr(obj, attr_name))
+
+
 class Table:
 
-    def __init__(self, attributes, th_renderer=None, td_renderer=None):
-        self.attributes = attributes
-        if th_renderer is None:
-            th_renderer = default_th_renderer
-        self.th_renderer = th_renderer
-        if td_renderer is None:
-            td_renderer = default_td_renderer
-        self.td_renderer = td_renderer
+    def __init__(self, columns, model=None):
+        self.columns = columns
+        self.model = model
 
     def get_title(self, class_attr):
         info = getattr(class_attr, 'info', {})
