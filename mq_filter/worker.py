@@ -29,6 +29,7 @@ class Worker:
         # NOTE we use a simple string so that we can use multiprocessing; and
         # get our actual objects later.
         self.source_queue_short_name = source_queue_short_name
+        self.failed = set()
 
     def get_logger(self):
         logger = logging.getLogger(f'mq_filter.worker.{self.source_queue_short_name}')
@@ -43,6 +44,9 @@ class Worker:
 
         with queue_manager.connect() as qmgr:
             for message, md in source_queue.browse_messages(qmgr, wait_interval=1000):
+                if md.MsgId in self.failed:
+                    continue
+
                 # Add new message and attempt-to-move object, to database
                 db_message = Message(message_bytes=message)
                 message_move = MessageMove(message=db_message, source_queue=source_queue)
@@ -88,18 +92,21 @@ class Worker:
                         session.commit()
                     except Exception:
                         logger.exception(
-                            '%s: An exception occurred while moving message.',
-                            self.source_queue_short_name)
+                            '%s: An exception occurred while moving message %r',
+                            self.source_queue_short_name,
+                            message)
                         session.rollback()
                         qmgr.backout()
+                        self.failed.add(md.MsgId)
+                        logger.warning('Ignoring MsgId=%s until restart', md.MsgId)
 
-    def loop_forever(self, database_uri):
+    def loop_forever(self, database_uri, stop_event):
         logger = self.get_logger()
         logger.info("Starting worker for queue %s", self.source_queue_short_name)
 
         engine = sa.create_engine(database_uri)
 
-        while True:
+        while not stop_event.is_set():
             with Session(engine) as session:
                 try:
                     self.move_messages(session)
