@@ -92,8 +92,9 @@ class Worker:
                         session.commit()
                     except Exception:
                         logger.exception(
-                            '%s: An exception occurred while moving message %r',
+                            '%s: An exception occurred while moving message MsgId=%r:  %r',
                             self.source_queue_short_name,
+                            md.MsgId,
                             message)
                         session.rollback()
                         qmgr.backout()
