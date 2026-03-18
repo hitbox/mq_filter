@@ -19,9 +19,10 @@ def setup_logging(cp):
     """
     Set up logging so that all go throughs a listener queue.
     """
-    paths = cp['mq_filter'].get('ensure_dirs').split()
-    for path in paths:
-        os.makedirs(path, exist_ok=True)
+    paths = cp['mq_filter'].get('ensure_dirs', '').split()
+    if paths:
+        for path in paths:
+            os.makedirs(path, exist_ok=True)
     logging.config.fileConfig(cp)
 
     root = logging.getLogger()
@@ -122,7 +123,7 @@ def main(argv=None):
             sa.select(Queue)
             .join(AirlineRoutingRule, AirlineRoutingRule.source_queue_id == Queue.id)
             .where(
-                Queue.short_name.ilike(queue_like),
+                Queue.short_name.ilike(f'%{queue_like}%'),
             )
             .distinct()
         )
