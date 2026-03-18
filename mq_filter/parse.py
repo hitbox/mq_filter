@@ -29,6 +29,8 @@ apis_regex = re.compile(r'(?P<prefix>\.ILNDD)(?P<airline_code>GB|8C)')
 # The FF in that line, is a priority (mentioned by someone on the call).
 flight_plan_regex = re.compile(r'^\((?P<aftn_type>CHG|CNL|DLA|FPL)-(?P<airline_code>ATN|ABX)')
 
+fallback_regex = re.compile(r'.*K(?P<airline_code>ATN|ABX)[A-Z]$')
+
 two_letter_airline_codes = {'8C', 'GB'}
 
 three_letter_airline_codes = {'ABX', 'ATN'}
@@ -105,8 +107,16 @@ def parse_content_for_airline(content):
                     data.update({'found': 'AFTN flight plan', 'line': ln})
                     break
             else:
-                raise ParseError(
-                    f'Unable to find flight plan with {flight_plan_regex=} for {content=}')
+                # Fallback search
+                for ln, line in enumerate(lines, start=1):
+                    match = fallback_regex.match(line)
+                    if match:
+                        data.update(match.groupdict())
+                        data.update({'found': 'fallback search', 'line': ln})
+                        break
+                else:
+                    raise ParseError(
+                        f'Unable to find line with either {flight_plan_regex=} or {fallback_regex=} for {content=}')
     return data
 
 def printable_splitlines(text):
