@@ -184,7 +184,7 @@ class Queue(Base):
         finally:
             q.close()
 
-    def browse_messages(self, qmgr, wait_interval=10_000):
+    def browse_messages(self, qmgr, stop_event, wait_interval=10_000):
         """
         Generate (mesage, md) tuples from queue without removing them. Use
         .get_mesage(md.MsgId) to remove message.
@@ -200,7 +200,7 @@ class Queue(Base):
             # BROWSE_FIRST on first iteration
             gmo.Options = pymqi.CMQC.MQGMO_BROWSE_FIRST | pymqi.CMQC.MQGMO_WAIT
             gmo.WaitInterval = wait_interval
-            while True:
+            while not stop_event.is_set():
                 try:
                     md = pymqi.MD()
                     message = q.get(None, md, gmo)

@@ -35,7 +35,7 @@ class Worker:
         logger = logging.getLogger(f'mq_filter.worker.{self.source_queue_short_name}')
         return logger
 
-    def move_messages(self, session):
+    def move_messages(self, session, stop_event):
         logger = self.get_logger()
 
         source_queue = Queue.one_by_short_name(self.source_queue_short_name, session)
@@ -43,7 +43,7 @@ class Worker:
         queue_manager = source_queue.queue_manager
 
         with queue_manager.connect() as qmgr:
-            for message, md in source_queue.browse_messages(qmgr, wait_interval=1000):
+            for message, md in source_queue.browse_messages(qmgr, stop_event, wait_interval=1000):
                 if md.MsgId in self.failed:
                     continue
 
@@ -110,7 +110,7 @@ class Worker:
         while not stop_event.is_set():
             with Session(engine) as session:
                 try:
-                    self.move_messages(session)
+                    self.move_messages(session, stop_event)
                 except pymqi.MQMIError as e:
                     if e.reason == pymqi.CMQC.MQRC_CONNECTION_BROKEN:
                         logger.warning('MQ connection broken, reconnecting...')
