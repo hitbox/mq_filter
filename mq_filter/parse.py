@@ -29,7 +29,7 @@ apis_regex = re.compile(r'(?P<prefix>\.ILNDD)(?P<airline_code>GB|8C)')
 # The FF in that line, is a priority (mentioned by someone on the call).
 flight_plan_regex = re.compile(r'^\((?P<aftn_type>CHG|CNL|DLA|FPL)-(?P<airline_code>ATN|ABX)')
 
-fallback_regex = re.compile(r'.*K(?P<airline_code>ATN|ABX)[A-Z]$')
+fallback_regex = re.compile(r'\d{6} KILN(?P<airline_code>ATN|ABX)[A-Z]$')
 
 two_letter_airline_codes = {'8C', 'GB'}
 
@@ -100,23 +100,20 @@ def parse_content_for_airline(content):
         else:
             # Finally, search for flight plan type line-by-line because the ^FF
             # line can wrap with newlines.
-            for ln, line in enumerate(lines, start=1):
-                match = flight_plan_regex.match(line)
-                if match:
-                    data.update(match.groupdict())
-                    data.update({'found': 'AFTN flight plan', 'line': ln})
-                    break
-            else:
-                # Fallback search
+            # reverse order try regexes
+            try_regexes = [fallback_regex, flight_plan_regex]
+            while try_regexes:
+                regex = try_regexes.pop()
                 for ln, line in enumerate(lines, start=1):
-                    match = fallback_regex.match(line)
+                    match = regex.match(line)
                     if match:
                         data.update(match.groupdict())
-                        data.update({'found': 'fallback search', 'line': ln})
+                        data.update({'found': regex, 'line': ln})
+                        try_regexes.clear()
                         break
-                else:
-                    raise ParseError(
-                        f'Unable to find line with either {flight_plan_regex=} or {fallback_regex=} for {content=}')
+            if not match:
+                raise ParseError(
+                    f'Unable to find line with either {flight_plan_regex=} or {fallback_regex=} for {content=} {lines=}')
     return data
 
 def printable_splitlines(text):
