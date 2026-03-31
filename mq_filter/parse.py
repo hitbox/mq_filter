@@ -29,7 +29,7 @@ apis_regex = re.compile(r'(?P<prefix>\.ILNDD)(?P<airline_code>GB|8C)')
 # The FF in that line, is a priority (mentioned by someone on the call).
 flight_plan_regex = re.compile(r'^\((?P<aftn_type>CHG|CNL|DLA|FPL)-(?P<airline_code>ATN|ABX)')
 
-fallback_regex = re.compile(r'\d{6} KILN(?P<airline_code>ATN|ABX)[A-Z]$')
+fallback_regex = re.compile(r'\d{6} (?:KILN|KLIT)(?P<airline_code>ATN|ABX)[A-Z]$')
 
 two_letter_airline_codes = {'8C', 'GB'}
 
