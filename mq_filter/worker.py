@@ -1,5 +1,7 @@
 import logging
+import os
 import smtplib
+import sys
 import time
 
 from email.message import EmailMessage
@@ -35,18 +37,14 @@ class Worker:
         logger = logging.getLogger(f'mq_filter.worker.{self.source_queue_short_name}')
         return logger
 
-    def move_messages(self, session, stop_event):
+    def move_messages(self, session):
         logger = self.get_logger()
 
         source_queue = Queue.one_by_short_name(self.source_queue_short_name, session)
 
         queue_manager = source_queue.queue_manager
-
         with queue_manager.connect() as qmgr:
-            for message, md in source_queue.browse_messages(qmgr, stop_event, wait_interval=1000):
-                if md.MsgId in self.failed:
-                    continue
-
+            for message, md in source_queue.browse_messages(qmgr, wait_interval=1000):
                 # Add new message and attempt-to-move object, to database
                 db_message = Message(message_bytes=message)
                 message_move = MessageMove(message=db_message, source_queue=source_queue)
@@ -101,13 +99,12 @@ class Worker:
                         self.failed.add(md.MsgId)
                         logger.warning('Ignoring MsgId=%s until restart', md.MsgId)
 
-    def loop_forever(self, database_uri, stop_event):
+    def loop_forever(self, database_uri):
         logger = self.get_logger()
-        logger.info("Starting worker for queue %s", self.source_queue_short_name)
+        logger.info("Starting loop_forever for queue %s", self.source_queue_short_name)
 
         engine = sa.create_engine(database_uri)
-
-        while not stop_event.is_set():
+        while True:
             with Session(engine) as session:
                 try:
                     self.move_messages(session, stop_event)
@@ -116,13 +113,19 @@ class Worker:
                         logger.warning('MQ connection broken, reconnecting...')
 
                         # Backoff before reconnecting
-                        time.sleep(2)
+                        # Sleep two seconds while also handling stop_event
+                        stop_event.wait(timeout=2)
                         continue
 
                     # Any other MQ error should still crash the worker
                     raise
+                except ParseError:
+                    logger.exception("exception in worker loop")
+                    stop_event.wait(timeout=2)
 
-                except Exception:
-                    # Catch-all so the worker NEVER dies
-                    logger.exception("unexpected exception in worker loop")
-                    time.sleep(2)
+def pid_exists(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
