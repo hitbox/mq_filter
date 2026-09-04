@@ -20,6 +20,8 @@ regex_for_format = {
     'DIV': airline_codes_regex,
 }
 
+# 2026-12-03 Thu.
+# Added [DS] to match ILNDS for failing message.
 apis_regex = re.compile(r'(?P<prefix>\.ILNDD)(?P<airline_code>GB|8C)')
 
 ### Second Switchover Attempt ###
@@ -30,6 +32,11 @@ apis_regex = re.compile(r'(?P<prefix>\.ILNDD)(?P<airline_code>GB|8C)')
 flight_plan_regex = re.compile(r'^\((?P<aftn_type>CHG|CNL|DLA|FPL)-(?P<airline_code>ATN|ABX)')
 
 fallback_regex = re.compile(r'\d{6} (?:KILN|KLIT)(?P<airline_code>ATN|ABX)[A-Z]$')
+
+# 2026-11-04 Fri.
+# Putting the new ILNDS back, as a fallback to make it very low priority.
+# airline prefixed by ILNDS
+apis_fallback_regex = re.compile(r'(?P<prefix>\.ILNDS)(?P<airline_code>GB|8C)')
 
 two_letter_airline_codes = {'8C', 'GB'}
 
@@ -101,14 +108,14 @@ def parse_content_for_airline(content):
             # Finally, search for flight plan type line-by-line because the ^FF
             # line can wrap with newlines.
             # reverse order try regexes
-            try_regexes = [fallback_regex, flight_plan_regex]
+            try_regexes = [apis_fallback_regex, fallback_regex, flight_plan_regex]
             while try_regexes:
                 regex = try_regexes.pop()
-                for ln, line in enumerate(lines, start=1):
+                for lineno, line in enumerate(lines, start=1):
                     match = regex.match(line)
                     if match:
                         data.update(match.groupdict())
-                        data.update({'found': regex, 'line': ln})
+                        data.update({'found': regex, 'line': lineno})
                         try_regexes.clear()
                         break
             if not match:
