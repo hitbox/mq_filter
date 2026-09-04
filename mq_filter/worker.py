@@ -45,6 +45,9 @@ class Worker:
         queue_manager = source_queue.queue_manager
         with queue_manager.connect() as qmgr:
             for message, md in source_queue.browse_messages(qmgr, wait_interval=1000):
+                if md.MsgId in self.failed:
+                    logger.info('Ignoring failed message MsgId=%s, message=%r', md.MsgId, message)
+                    continue
                 # Add new message and attempt-to-move object, to database
                 db_message = Message(message_bytes=message)
                 message_move = MessageMove(message=db_message, source_queue=source_queue)
@@ -107,21 +110,18 @@ class Worker:
         while True:
             with Session(engine) as session:
                 try:
-                    self.move_messages(session, stop_event)
+                    self.move_messages(session)
                 except pymqi.MQMIError as e:
                     if e.reason == pymqi.CMQC.MQRC_CONNECTION_BROKEN:
                         logger.warning('MQ connection broken, reconnecting...')
 
                         # Backoff before reconnecting
-                        # Sleep two seconds while also handling stop_event
-                        stop_event.wait(timeout=2)
                         continue
 
                     # Any other MQ error should still crash the worker
                     raise
                 except ParseError:
                     logger.exception("exception in worker loop")
-                    stop_event.wait(timeout=2)
 
 def pid_exists(pid):
     try:
