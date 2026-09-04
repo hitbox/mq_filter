@@ -1,3 +1,5 @@
+import time
+
 from contextlib import contextmanager
 
 import sqlalchemy as sa
@@ -12,6 +14,10 @@ from sqlalchemy.orm import relationship
 
 from .parse import parse_content_for_airline
 from .parse import extract_payload_from_mq
+
+class MQConnectionError(Exception):
+    """Raised when MQ connection fails after retries."""
+    pass
 
 class Base(DeclarativeBase):
 
@@ -100,9 +106,21 @@ class QueueManager(Base):
             conn_info = self.connection.as_string(),
         )
 
+    def _connect_with_retries(self, retries=5, delay=1):
+        for attempt in range(1, retries+1):
+            try:
+                return self._connect()
+            except pymqi.MQMIError as e:
+                if attempt == retries:
+                    raise MQConnectionError(
+                        f'Failed to connect to MQ after {retries} attempts'
+                    ) from e
+
+                time.sleep(delay * (2 ** (attempt - 1)))
+
     @contextmanager
     def connect(self):
-        _qmgr = self._connect()
+        _qmgr = self._connect_with_retries()
         try:
             yield _qmgr
         finally:
